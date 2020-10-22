@@ -1,0 +1,209 @@
+---
+title: "Bacterial Abundance Analysis"
+author: "Kai Oda"
+date: "10/21/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(readxl)
+library(dplyr)
+```
+
+## Loading in the data 
+
+```{r}
+# First let's see what sheets are within the xcel file that we will be working with 
+excel_sheets("../Input_Data/week3/144L_2018_BactAbund.xlsx")
+
+#Import the metadata 
+metadata <- read_excel("../Input_Data/week3/144L_2018_BactAbund.xlsx", sheet="Metadata")
+
+#unique treatments 
+unique(metadata$Treatment)
+```
+
+Properties of this dataset
+- Only **1 location** and one depth is sampled 
+- There are **8 bottles** labeled (A-H)
+- There are **9 timepoints** taken for each bottle 
+- There are **4 treatments.** Control, ash leachate, mud leachate and the GNP mix. 
+- There are **3 DNA samples** taken per bottle. 
+
+```{r}
+# Import the actual data 
+data <- read_excel("../Input_Data/week3/144L_2018_BactAbund.xlsx", sheet="Data")
+
+# Now, we join the actual data to the metadata 
+joined <- left_join(metadata, data)
+
+```
+
+So now we have a dataset that contains the number of cells. *left_join()* synchronzied Cells_ml by Bottle and Timepoint 
+
+## Data exploration/basic manipulation 
+
+```{r}
+str(joined)
+```
+
+We need to: 
+
+- Convert cells/mL -> cells/L 
+- Calculate duration between timepoints based on treatment and bottle 
+- remove rows with NA values for cells 
+
+``` {r}
+cells <- joined %>% 
+  mutate(Datetime = ymd_hm(Datetime), 
+         cells_L = Cells_ml * 1000) %>% 
+  drop_na(cells_L) %>% 
+  group_by(Treatment, Bottle) %>% 
+  mutate(interv = interval(first(Datetime), Datetime), 
+         dur = as.duration(interv),
+         days = as.numeric(dur, "days")) %>% 
+  mutate(cells_sd = sd(cells_L)) %>% 
+  ungroup() 
+  
+
+str(cells)
+```
+
+
+## Basic data visualization 
+Normally, we could create a variable to store the order in which elements should appear. However, I am happy with the default ordering. 
+
+```{r}
+levels <- c("Control", "Ash Leachate", "Mud Leachate", "Glucose_Nitrate_Phosphate")
+
+# This line orders the treatment variable by the specified order for all future figures
+cells$Treatment <- factor(cells$Treatment, levels = levels)
+
+cells %>% 
+  mutate(dna = ifelse(DNA_Sample == TRUE, "*", NA)) %>% 
+  ggplot(aes(x=days, y=cells_L, color=Treatment, 
+             group = interaction(Treatment, Bottle)))+
+  geom_point(size=3)+
+  geom_errorbar(aes(ymin = cells_L - cells_sd, ymax = cells_L + cells_sd), width=0.1)+
+  labs(x = "Days", y = expression(paste("Cells L"^-1)))+
+  geom_line()+
+  facet_grid(row="Treatment", scales="free")+
+  geom_text(aes(label=dna), size=12, color="black")+
+  theme_bw()
+
+
+```
+
+For the next part we need to plot the ln(cell_abundance) vs time (days). We will visually estimate where graph is linear. The slope of this linear portion will give us the specific growth rate. 
+
+```{r}
+ln_cells <- cells %>% 
+  group_by(Treatment, Bottle) %>% 
+  mutate(ln_cells = log(cells_L), 
+         diff_ln_cells = ln_cells-lag(ln_cells, default=first(ln_cells))) %>% 
+  ungroup()
+```
+
+Once we have calculated the difference in the natural log of the cell counts we can just plot the same graph and visually check for where the lines appear linear. 
+
+```{r}
+# Trying to display all 4 treatments and bottles in one graph makes it impossible to distinguish the linear portion
+## Therefore, I am trying to split the dataset into two treatments each to make it easier to visualize 
+ln_control_ash <- ln_cells %>% 
+  filter(Treatment %in% c("Control", "Ash Leachate"))
+
+ln_control_ash %>% 
+  mutate(dna = ifelse(DNA_Sample == TRUE, "*", NA)) %>% 
+  ggplot(aes(x=days, y=diff_ln_cells, color=Treatment, 
+             group = interaction(Treatment, Bottle)))+
+  geom_point(size=3)+
+  labs(x = "Days", y = expression(paste("Change in ln(Cells) L"^-1)), title="Change in ln(Cells) in control + ash treatments over time")+
+  geom_line()+
+  facet_grid(Bottle~Treatment, scales="free")+
+  geom_text(aes(label=dna), size=12, color="black")+
+  theme_bw()
+
+# Second graph, showing mud and GNP solution 
+ln_mud_GNP <- ln_cells %>% 
+  filter(Treatment %in% c("Mud Leachate", "Glucose_Nitrate_Phosphate"))
+
+ln_mud_GNP %>% 
+  mutate(dna = ifelse(DNA_Sample == TRUE, "*", NA)) %>% 
+  ggplot(aes(x=days, y=diff_ln_cells, color=Treatment, 
+             group = interaction(Treatment, Bottle)))+
+  geom_point(size=3)+
+  labs(x = "Days", y = expression(paste("Change in ln(Cells) L"^-1)), title="Change in ln(Cells) in mud + GNP treatments over time")+
+  geom_line()+
+  facet_grid(Bottle~Treatment, scales="free")+
+  geom_text(aes(label=dna), size=12, color="black")+
+  theme_bw()
+
+```
+
+Based on the graphs the we can visually estimate where exponential growth occurs for each bottle: 
+
+- Control, Bottle A, ~0-0.5d (T0-T1)
+- Control, Bottle B, ~0-0.5d (T0-T1)
+- Ash Leachate, Bottle C, ~0-0.5d (T0-T1)
+- Ash Leachate, Bottle D, ~0-0.5d (T0-T1)
+- Mud Leachate, Bottle E, ~0-0.5d (T0-T1)
+- Mud Leachate, Bottle F, ~0-0.5d (T0-T1)
+
+- GNP, Bottle G, ~0-1d (T0-T2)
+- GNP, Bottle H, ~0-1d (T0-T2)
+
+```{r}
+growth <- ln_cells %>% 
+  mutate(exp_start = 0, 
+         exp_end = ifelse(Treatment=="Glucose_Nitrate_Phosphate", 2, 1)) %>% 
+  group_by(Treatment, Bottle) %>% 
+  mutate(ln_cells_exp_start = ifelse(exp_start == Timepoint, ln_cells, NA), 
+         ln_cells_exp_end = ifelse(exp_end == Timepoint, ln_cells, NA), 
+         cells_exp_start = ifelse(exp_start == Timepoint, cells_L, NA), 
+         cells_exp_end = ifelse(exp_end == Timepoint, cells_L, NA), 
+         days_exp_start = ifelse(exp_start == Timepoint, days, NA), 
+         days_exp_end = ifelse(exp_end == Timepoint, days, NA),) %>%
+  fill(ln_cells_exp_start:days_exp_end, .direction="downup") %>%
+  fill(ln_cells_exp_end, .direction="updown") %>% 
+  mutate(mew = (ln_cells_exp_end - ln_cells_exp_start)/(days_exp_end - days_exp_start), 
+         doubling_time = log(2)/mew, 
+         delta_cells = cells_exp_end - first(cells_L)) %>% 
+  ungroup() 
+
+
+check <- growth %>%  
+  select(Treatment, Bottle, Timepoint, ln_cells, exp_start, exp_end, cells_exp_start, cells_exp_end, mew, doubling_time)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
