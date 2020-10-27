@@ -213,30 +213,115 @@ Now that we have verified that the data from each bottle seems valid, it can be 
 - Change in cells over experiment 
 - Change in cell C over experiment 
 
+As a bonus we can also calculate the average duration of the lag phase over the course of the experiment 
+
 ```{r}
 averages <- batCarbon %>% 
   group_by(Treatment, Timepoint) %>% 
   mutate(avg_bc = mean(bc), 
          sd_bc = sd(bc)) %>% 
   ungroup() %>% 
-  group_by(Treatment, Bottle) %>% 
-  mutate() %>% 
+  group_by(Treatment) %>% 
+  mutate(avg_mew = mean(mew), 
+         sd_mew = sd(mew), 
+         avg_doubling_time = mean(doubling_time), 
+         sd_doubling_time = sd(doubling_time), 
+         avg_delta_cells = mean(delta_cells), 
+         sd_delta_cells = sd(delta_cells), 
+         avg_delta_bc = mean(deltaBc), 
+         sd_delta_bc = sd(deltaBc), 
+         avg_lag_phase_dur = mean(days_exp_start)) %>% 
   ungroup()
 
 subset <- averages %>% 
   select(Treatment, Timepoint, Bottle, bc, avg_bc, sd_bc)
   
+
+```
+
+Now that we have the dataset made with a bunch of average values we can make a plot!
+
+First up, average carbon/cell 
+
+```{r}
+ggplot(averages, aes(x=days, y=avg_bc, color=Treatment))+
+  geom_point()+
+  geom_line()+
+  geom_errorbar(aes(ymin= avg_bc - sd_bc, ymax = avg_bc + sd_bc), width=0.1)+
+  facet_grid(row = "Treatment")+
+  labs(x="Days", y=expression("Bacterial Carbon µmol C L"^-1))+
+  theme_bw()
+
+```
+
+## Visualizing the rest of the data
+
+We were able to plot average carbon/cell, but we have a bunch of other values! However, there is only one value for each treatment, so we will be making use of a new graph.... The column graph! 
+
+```{r}
+## First we need to subset the data to only include the variables of interest 
+bar_data <- averages %>% 
+  select(Location, Treatment, avg_mew:avg_lag_phase_dur)
+
+## For further simplification we will only return unique values with the distinct() function 
+bar_data <- bar_data %>% 
+  distinct()
+
+```
+
+## Let's start plotting! 
+
+```{r}
+avg_mew <- ggplot(bar_data, aes(x=Treatment, y=avg_mew))+
+  geom_col(fill="white", color="black")+
+  geom_errorbar(aes(ymin=avg_mew-sd_mew, ymax = avg_mew + sd_mew), width=0.1)+
+  labs(x="Treatment", y=expression("µ, d"^-1))+
+  theme_bw()
+
+avg_mew
+
+```
+
+```{r}
+avg_doubling_time <- ggplot(bar_data, aes(x=Treatment, y=avg_doubling_time))+
+  geom_col(fill="white", color="black")+
+  geom_errorbar(aes(ymin=avg_doubling_time-sd_doubling_time, ymax = avg_doubling_time + sd_doubling_time), width=0.1)+
+  labs(x="Treatment", y=expression("Doubling Time (days)"))+
+  theme_bw()
+
+avg_doubling_time
+
 ```
 
 
+```{r}
+avg_delta_bc <- ggplot(bar_data, aes(x=Treatment, y=avg_delta_bc))+
+  geom_col(fill="white", color="black")+
+  geom_errorbar(aes(ymin=avg_delta_bc-sd_delta_bc, ymax = avg_delta_bc + sd_delta_bc), width=0.1)+
+  labs(x="Treatment", y=expression("Change in Bacterial Carbon, µmol C L"^-1))+
+  theme_bw()
+
+avg_delta_bc
+
+```
+
+```{r}
+avg_lag_phase_dur <- ggplot(bar_data, aes(x=Treatment, y=avg_lag_phase_dur))+
+  geom_col(fill="white", color="black")+
+  labs(x="Treatment", y=expression("Average Duration of Lag Phase, days"))+
+  theme_bw()
+
+avg_lag_phase_dur
+
+```
 
 
+```{r fig.height=6, fig.width=13}
+library(patchwork)
 
+avg_mew + avg_delta_bc + avg_doubling_time + avg_lag_phase_dur + plot_annotation(tag_levels="a")
 
-
-
-
-
+```
 
 
 
