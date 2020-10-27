@@ -157,6 +157,8 @@ Based on the graphs the we can visually estimate where exponential growth occurs
 - GNP, Bottle G, ~0-1d (T0-T2)
 - GNP, Bottle H, ~0-1d (T0-T2)
 
+## Calculate growth rates, doubling times and change in cell abundances 
+
 ```{r}
 growth <- ln_cells %>% 
   mutate(exp_start = 0, 
@@ -182,9 +184,49 @@ check <- growth %>%
 ```
 
 
+## Calculate Bacterical Carbon 
 
+- Convert bacterial abundance and change in bacterial abundance to C units 
+- Apply a C conversion factor to bacterial abundnace (cells/L)
+- This generates bacterial carbon (µmol C/L)
 
+We will apply C content of bacterioplankton cells from Coastal Japan (-10 fg C/cell)
 
+- Fukuda et. al., 1998
+
+```{r}
+batCarbon <- growth %>% 
+  mutate(bc = cells_L * (2.5 * 10^-9), 
+         deltaBc = delta_cells * (2.5*10^-9))
+
+str(batCarbon)
+
+```
+
+## Calculating Treatment Averages 
+
+Now that we have verified that the data from each bottle seems valid, it can be helpful to calculate the average values for important properties. In the following code chunk we will calculate the average values and standard deviation for: 
+
+- Bacterial Carbon/cell 
+- Specific growth rate 
+- Doubling time 
+- Change in cells over experiment 
+- Change in cell C over experiment 
+
+```{r}
+averages <- batCarbon %>% 
+  group_by(Treatment, Timepoint) %>% 
+  mutate(avg_bc = mean(bc), 
+         sd_bc = sd(bc)) %>% 
+  ungroup() %>% 
+  group_by(Treatment, Bottle) %>% 
+  mutate() %>% 
+  ungroup()
+
+subset <- averages %>% 
+  select(Treatment, Timepoint, Bottle, bc, avg_bc, sd_bc)
+  
+```
 
 
 
