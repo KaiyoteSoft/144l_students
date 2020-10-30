@@ -2,7 +2,7 @@
 title: "Bacterial Abundance Analysis"
 author: "Kai Oda"
 date: "10/21/2020"
-output: html_document
+output: github_document
 ---
 
 ```{r setup, include=FALSE}
@@ -29,6 +29,7 @@ unique(metadata$Treatment)
 ```
 
 Properties of this dataset
+
 - Only **1 location** and one depth is sampled 
 - There are **8 bottles** labeled (A-H)
 - There are **9 timepoints** taken for each bottle 
@@ -76,7 +77,7 @@ str(cells)
 
 
 ## Basic data visualization 
-Normally, we could create a variable to store the order in which elements should appear. However, I am happy with the default ordering. 
+Normally, we could create a variable to store the order in which elements should appear. Rather than set the levels in every plot I decided to edit the column "Treatment" to display information in the desired order. Therefore, the treatment variable appears in the specified order **for all future figures.**
 
 ```{r}
 levels <- c("Control", "Ash Leachate", "Mud Leachate", "Glucose_Nitrate_Phosphate")
@@ -98,6 +99,9 @@ cells %>%
 
 
 ```
+
+From the plot, it appears that Ash Leachate and GNP treatments had the greatest abundance of bacterial cells (note the free y axis). The Mud Leachate and Control treatments seem very similar, indicating that the addition of mud leachate had little effect on bacterial abundance (although a T test/One-way ANOVA + TuskeyHSD test is needed to say for sure). 
+
 
 For the next part we need to plot the ln(cell_abundance) vs time (days). We will visually estimate where graph is linear. The slope of this linear portion will give us the specific growth rate. 
 
@@ -145,7 +149,7 @@ ln_mud_GNP %>%
 
 ```
 
-Based on the graphs the we can visually estimate where exponential growth occurs for each bottle: 
+Based on the graphs the we can visually estimate where exponential growth (the log phase) occurs for each bottle: 
 
 - Control, Bottle A, ~0-0.5d (T0-T1)
 - Control, Bottle B, ~0-0.5d (T0-T1)
@@ -254,6 +258,8 @@ ggplot(averages, aes(x=days, y=avg_bc, color=Treatment))+
 
 ```
 
+This plot shows the average bacterial carbon for four different treatments. It appears that **Ash Leachate** and **GNP** treatments had the highest bacterial carbon/cell. Mud Leachate does not appear to be significantly different from the Control treatment (statistical test needed). 
+
 ## Visualizing the rest of the data
 
 We were able to plot average carbon/cell, but we have a bunch of other values! However, there is only one value for each treatment, so we will be making use of a new graph.... The column graph! 
@@ -282,6 +288,11 @@ avg_mew
 
 ```
 
+This graph represents "mew" or the specific growth rate. Ash Leachate and GNP treatments had the highest specific growth rate, followed by Mud Leachate and then the control. We can generally take this to mean that Ash Leachate and GNP treatments experienced the fastest increase in bacterial cell abundance. 
+
+*Note: Mud Leachate standard error was so small that it did not appear on the graph. However, it is still there!*
+
+
 ```{r}
 avg_doubling_time <- ggplot(bar_data, aes(x=Treatment, y=avg_doubling_time))+
   geom_col(fill="white", color="black")+
@@ -292,6 +303,8 @@ avg_doubling_time <- ggplot(bar_data, aes(x=Treatment, y=avg_doubling_time))+
 avg_doubling_time
 
 ```
+
+The Control treatment had the greatest doubling time. This means that it took the longest time for the population to double — it experienced the slowest growth in its population. Ash Leachate and GNP treatments were able to double their population in the shortest time frame! 
 
 
 ```{r}
@@ -315,6 +328,8 @@ avg_lag_phase_dur
 
 ```
 
+This is a bit odd. After some review, the "log" phase started at day 0, timepoint 0 for all treatments. Therefore, the average duration of the log phase is... zero! It is unclear whether the bacteria were able to quickly take advantage of nutrients or whether delayed sampling simply missed the lag phase of bacterial growth. 
+
 
 ```{r fig.height=6, fig.width=13}
 library(patchwork)
@@ -324,7 +339,7 @@ avg_mew + avg_delta_bc + avg_doubling_time + avg_lag_phase_dur + plot_annotation
 ```
 
 
-
+A summary of all figures. From these graphs we can determine that additions of **ash leachate** had the greatest positive effect on bacterial growth and abundance. GNP treatments were similarly effective, with slightly higher bacterial carbon. Mud Leachate treatments were somewhat effective in increasing bacterial growth rate and bacterial carbon. However, it appears to be a much lower quality source of carbon when compared to ash lechate. 
 
 
 
