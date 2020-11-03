@@ -1,0 +1,209 @@
+---
+title: "TOC and DOC Analysis"
+author: "Kai Oda"
+date: "11/2/2020"
+output: github_document
+---
+
+## Loading in the packages and data
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(readxl)
+
+```
+
+Now, lets read in the two excel sheets
+
+```{r}
+excel_sheets("../Input_Data/week4/144L_2018_Exp_TOC.xlsx")
+
+#Read in the metadata sheet
+metadata <- read_excel("../Input_Data/week4/144L_2018_Exp_TOC.xlsx", sheet = "Metadata")
+
+#Read in the data sheet
+data <- read_excel("../Input_Data/week4/144L_2018_Exp_TOC.xlsx", sheet = "Data")
+
+#Join the two datasets together 
+joined <- left_join(metadata, data)
+
+str(joined)
+
+```
+
+After reading in our data, we want to perform some basic data wrangling to create a "days" column by treatment and bottle  We also want to subset the data to only include our columns of interest. 
+
+```{r}
+toc <- joined %>% 
+  mutate(Datetime = ymd_hm(Datetime)) %>% 
+  group_by(Treatment, Bottle) %>%
+  mutate(interv = interval(first(Datetime), Datetime), 
+         dur = as.duration(interv), 
+         days= as.numeric(dur, "days")) %>% 
+  ungroup() %>% 
+  rename(sd_TOC = TOC_sd, 
+         sd_PTOC = PTOC_sd) %>% 
+  select(everything(), -c(contains("Sample"), interv, dur))
+  
+
+str(toc)
+```
+
+*Note: For some reason, the interval() function does not behave as it does in the videos. It returns two dates. I had to use the as.duration() function to calculate the time between the dates, then the as.numeric() function to convert that time into days.*
+
+## Plotting TOC and DOC 
+
+It is beneficial to plot TOC and DOC on the same graph to visually check for major differences. 
+
+```{r}
+pivot_toc <- toc %>% 
+  select(Treatment, Bottle, days, TOC, PTOC)
+
+#reduce rows and increase columns to have the values of TOC and PTOC in the same column
+pivot_toc <- pivot_toc %>% 
+  pivot_longer(TOC:PTOC, names_to="sample", values_to = "value")
+
+pivot_toc_sd <- toc %>% 
+  select(Treatment, Bottle, days, sd_TOC, sd_PTOC)  
+
+## Do thte same thing for the sd
+pivot_toc_sd <- pivot_toc_sd %>% 
+  pivot_longer(sd_TOC:sd_PTOC, names_to="sample", names_prefix = "sd_", values_to = "sd")
+
+## Combine the datsets and make the sample column easier to understand
+pivoted <- left_join(pivot_toc, pivot_toc_sd) %>% 
+  mutate(sample = ifelse(sample=="TOC", "Bottle", "Vial"))
+
+## Set the order of variables for future graphs 
+levels <- c("Control", "Ash Leachate", "Mud Leachate", "Glucose_Nitrate_Phosphate")
+
+pivoted$Treatment <- factor(pivoted$Treatment, levels = levels)
+pivoted$sample <- factor(pivoted$sample)
+```
+
+Now that our dataset is prepared we can begin plotting!
+
+```{r fig.height=6}
+pivoted %>% 
+  drop_na(value) %>% 
+  ggplot(aes(x=days, y=value, color=sample), group = interaction(Treatment, sample))+
+  geom_errorbar(aes(ymin=value-sd, ymax = value+sd), width=0.1)+
+  geom_point(shape=21, alpha=0.7, size=3)+
+  labs(x="Days", y=expression("Total Organic Carbon µmol L"^-1))+
+  facet_grid(rows = "Treatment")
+  
+
+```
+
+
+## Model II Linear Regression
+
+Next, we want to compare the bottle and vial samples to determine whether the measurements between the two are statistically similar. 
+
+A Model II linear regression assumes that both x and y are dependent variables that are measured and have error. In this case, x will represent TOC while y represents PTOC. 
+
+```{r}
+library(lmodel2)
+
+## Drop na values and only include results after timepoint 0
+toc_lm_data <- toc %>% 
+  drop_na(TOC) %>% 
+  filter(Timepoint > 0)
+
+toc_lm <- lmodel2(PTOC ~ TOC, data=toc_lm_data, nperm=99)
+
+## Now, we save the values of intercept and slope. 
+intercept <- toc_lm$regression.results[3,2]
+slope <- toc_lm$regression.results[3,3]
+
+## Now, we save the values of the CI for intercept and slope
+two_int <- toc_lm$confidence.intervals[3,2]
+two_slope <- toc_lm$confidence.intervals[3,4]
+
+nine_int <- toc_lm$confidence.intervals[3,3]
+nine_slope <- toc_lm$confidence.intervals[3,5]
+
+```
+
+Now, lets plot the TOC and PTOC values in ggplot 
+
+```{r}
+ggplot(toc_lm_data, aes(x=TOC, y=PTOC))+
+  geom_errorbar(aes(ymin=PTOC-sd_PTOC, ymax = PTOC + sd_PTOC), width=0.2)+
+  geom_point(shape=21, size=3, fill="white", alpha=0.6)+
+  geom_abline(intercept=intercept, slope=slope, linetype=2)+
+  geom_abline(intercept=two_int, slope=two_slope, linetype=2)+
+  geom_abline(intercept=nine_int, slope=nine_slope, linetype=2)+
+  labs(x=expression("Bottle TOC µmol L"^-1), y = expression("Vial TOC µmol L"^-1))+
+  annotate(geom="text", label = expression(atop("y = 1.03x - 2.1", paste("r"^2," = 0.96, ", italic("p "), "= 0.01"))), x = 80, y=90, size=4)
+```
+
+Most values can be explained by the regression line, p value is less than 0.05. 
+
+## Calculating the DOC 
+
+To calculate the DOC = TOC - POC. Unfortunately, we need bactierial carbon for POC. So let's get to it! 
+
+```{r}
+bc <- read_rds("../Bacterial_Abundance/bacterialCarbon.RDS")
+merge <- left_join(toc, bc)
+
+merge <- merge %>% 
+  select(Experiment:days, TOC:sd_PTOC, cells_L:delta_cells, bc, avg_bc, sd_bc, everything(), -c(contains("Sample"))) %>% 
+  group_by(Treatment, Bottle) %>% 
+  fill(exp_start:avg_lag_phase_dur) %>% 
+  ungroup()
+
+glimpse(merge)
+
+```
+
+```{r}
+to_interpolate <- merge %>% 
+  select(Experiment, Treatment, Bottle, Timepoint, days, PTOC, bc) %>% 
+  group_by(Treatment, Bottle)
+
+list <- to_interpolate %>% 
+  group_split()
+
+keys <- to_interpolate %>% 
+  group_keys() %>% 
+  mutate(key = paste(Treatment, Bottle))
+
+names(list) <- keys$key
+
+```
+
+## Write function
+
+```{r}
+library(zoo)
+
+interp.funct <- function(x) {
+  y <- zoo(x, order.by = x$days)
+  interp_toc <- round(as.numeric(na.approx(y$PTOC, na.rm=F)), 1)
+  interp_bc <- round(as.numeric(na.approx(y$bc, na.rm=F)), 1)
+  z <- cbind(y, interp_toc, interp_bc)
+  as_tibble(z)
+}
+
+```
+
+## Apply the function and combine the columns into the main dataset
+
+```{r}
+interpolated <- lapply(list, interp.funct) %>% 
+  plyr::ldply(., as.data.frame) %>% 
+  select(-c(.id, PTOC, bc, days)) %>% 
+  mutate_at(vars(Timepoint:interp_bc), as.numeric) %>% 
+  left_join(merge, .)
+
+
+glimpse(interpolated)
+```
+
+
