@@ -152,37 +152,47 @@ To calculate the DOC = TOC - POC. Unfortunately, we need bactierial carbon for P
 bc <- read_rds("../Bacterial_Abundance/bacterialCarbon.RDS")
 merge <- left_join(toc, bc)
 
+## In the next chunk we reorder the variabls so that time dependent variables appear first. Values that are not time dependent follow these time dependent variables 
 merge <- merge %>% 
   select(Experiment:days, TOC:sd_PTOC, cells_L:delta_cells, bc, avg_bc, sd_bc, everything(), -c(contains("Sample"))) %>% 
   group_by(Treatment, Bottle) %>% 
   fill(exp_start:avg_lag_phase_dur) %>% 
   ungroup()
+## We also fill in some missing values 
 
 glimpse(merge)
 
 ```
 
+Bactieral abundance/TOC from vial samples were not taken at every timepoint. In some cases we have a TOC sample but no bacterial carbon sample (or vice versa). We want to use an interpolation function to fill in the missing values between two known values for TOC and bacterial carbon (POC) so that we can compute DOC for a greater number of timepoints. 
+
 ```{r}
+## Select the variables of interest...
 to_interpolate <- merge %>% 
   select(Experiment, Treatment, Bottle, Timepoint, days, PTOC, bc) %>% 
   group_by(Treatment, Bottle)
 
+## Use the group_split() function to break the dataset into a list (data type)
+## The list is split up by the grouped elements (Treatment, Bottle)
 list <- to_interpolate %>% 
   group_split()
 
+## Generate the keys, (Treatment, Bottle)
 keys <- to_interpolate %>% 
   group_keys() %>% 
   mutate(key = paste(Treatment, Bottle))
 
+## Change the name of the list elements to the generated key values 
 names(list) <- keys$key
 
 ```
 
-## Write function
+### Writing the function
 
 ```{r}
 library(zoo)
 
+## Interpolates the toc and POC values, joins them together with cbind() and converts the matrix to a tbl with as_tibble()
 interp.funct <- function(x) {
   y <- zoo(x, order.by = x$days)
   interp_toc <- round(as.numeric(na.approx(y$PTOC, na.rm=F)), 1)
@@ -196,14 +206,42 @@ interp.funct <- function(x) {
 ## Apply the function and combine the columns into the main dataset
 
 ```{r}
+## lapply() takes a list and applies a function to each element in the list 
+## We also need to convert numeric variables (they are chrs by default from as_tibble())
 interpolated <- lapply(list, interp.funct) %>% 
   plyr::ldply(., as.data.frame) %>% 
   select(-c(.id, PTOC, bc, days)) %>% 
   mutate_at(vars(Timepoint:interp_bc), as.numeric) %>% 
   left_join(merge, .)
 
-
+## Now we can see the MASSIVE dataframe with the interpolated values :) 
 glimpse(interpolated)
 ```
 
+## Calculating Derived Variables 
+
+Now that we have our interpolated TOC and POC values we want to calculate a bunch of values related to DOC and BGE (bacterial growth efficiency). 
+
+```{r}
+doc <- interpolated %>% 
+  mutate(doc = interp_toc - interp_bc) %>% 
+  group_by(Treatment, Bottle) %>% 
+  mutate(
+    bioav_doc = (first(doc) - last(na.omit(doc))) / first(doc), 
+    doc_exp_end = ifelse(Timepoint == exp_end, doc, NA), 
+    delta_doc = first(doc) - doc_exp_end, 
+    tdelta_doc = first(doc) - last(na.omit(doc)), 
+    bge = ifelse(delta_doc > 1.5, deltaBc/delta_doc, NA)
+  ) %>% 
+  fill(bioav_doc:bge, .direction = "downup") %>% 
+  ungroup()
+
+## Don't forget to fill the columns!
+
+subset <- doc %>% 
+  select(Treatment, Bottle, Timepoint, doc, bioav_doc, doc_exp_end, delta_doc, tdelta_doc, bge)
+
+str(doc)
+
+```
 
