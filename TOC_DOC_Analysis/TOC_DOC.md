@@ -144,7 +144,10 @@ pivoted %>%
 
     ## Warning: Removed 6 rows containing missing values (geom_errorbar).
 
-![](TOC_DOC_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
+![](TOC_DOC_files/figure-gfm/unnamed-chunk-4-1.png)<!-- --> From a
+glance it appears that TOC measurements between the bottle and vials are
+relatively similar. However, to ensure that they are statistically
+comparable a more robust test is needed.
 
 ## Model II Linear Regression
 
@@ -202,7 +205,11 @@ ggplot(toc_lm_data, aes(x=TOC, y=PTOC))+
 ![](TOC_DOC_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
 
 Most values can be explained by the regression line, p value is less
-than 0.05.
+than 0.05. I take this to mean that the measurements between vials and
+bottles were relatively similar. Therefore, this test us that the vial
+measurements are representative of the TOC concentrations from the large
+bottle. Thus, we can proceed with calculating DOC from the TOC values
+from the vials.
 
 ## Calculating the DOC
 
@@ -493,3 +500,179 @@ str(doc)
     ##  $ delta_doc           : num  1 1 1 1 1 1 1 1 1 1 ...
     ##  $ tdelta_doc          : num  4.9 4.9 4.9 4.9 4.9 ...
     ##  $ bge                 : num  NA NA NA NA NA NA NA NA NA NA ...
+
+## Plotting average derived values
+
+We’ve calculated DOC and a bunch of other variables. It is beneficial to
+see the averaged values across treatments and timepoints where
+applicable. First, we need to generate a datset containing the derived
+variables.
+
+``` r
+averages <- doc %>% 
+  group_by(Treatment, Timepoint) %>% 
+  mutate(avg_toc = mean(PTOC), 
+         sd_toc = sd(PTOC)) %>% 
+  ungroup() %>% 
+  group_by(Treatment) %>%
+  mutate(
+    avg_bioav_doc = mean(bioav_doc),
+    sd_bioav_doc = sd(bioav_doc),
+    avg_delta_doc = mean(delta_doc),
+    sd_delta_doc = sd(delta_doc),
+    avg_tdelta_doc = mean(tdelta_doc),
+    sd_tdelta_doc = sd(tdelta_doc),
+    avg_bge = mean(bge),
+    sd_bge = sd(bge)
+  ) %>% 
+  ungroup()
+```
+
+We have calculated the average values and added them to our giant
+dataset. Now, we want to plot these average values.
+
+## Plotting average values with ggplot
+
+First, lets plot the average TOC values for each treatment
+
+``` r
+levels <- c("Control", "Ash Leachate", "Mud Leachate", "Glucose_Nitrate_Phosphate")
+
+averages$Treatment <- factor(averages$Treatment, levels = levels)
+
+averages %>% 
+  mutate(Treatment = factor(Treatment)) %>% 
+  drop_na(avg_toc) %>% 
+  ggplot(aes(x=days, y = avg_toc, color = Treatment), group = interaction(Treatment)) +
+  geom_errorbar(aes(ymin=avg_toc - sd_toc, ymax = avg_toc + sd_toc), width = 0.2)+
+  geom_point()+
+  geom_line()+
+  labs(x="Days", y = expression("Average Total Organic Carbon, µmol C L"^-1))+
+  theme_bw()
+```
+
+![](TOC_DOC_files/figure-gfm/unnamed-chunk-13-1.png)<!-- --> The two
+treatments with the highest growth rate/bacterial abundance (ash
+leachate and GNP), experienced the greatest decrease in TOC over the
+course of the experiment. This likely indicates that they used the
+available carbon to increase their biomass. Mud leachate treatment
+started at around the same level but little C was actually taken up by
+the microbes.
+
+Now, we’ll make bar plots for the remaining averaged variables
+
+``` r
+bar_data <- averages %>% 
+  select(Treatment, avg_bioav_doc:sd_bge) %>% 
+  distinct()
+```
+
+**Average bioavailable DOC**
+
+``` r
+bioav_doc_graph <- bar_data %>% 
+  ggplot(aes(x=Treatment, y=avg_bioav_doc))+
+  geom_col(aes(fill=Treatment))+
+  geom_errorbar(aes(ymin = avg_bioav_doc - sd_bioav_doc, ymax = avg_bioav_doc + sd_bioav_doc), width=0.3)+
+  labs(y="Bioavailable DOC Fraction")+
+  theme_bw()
+
+
+bioav_doc_graph
+```
+
+![](TOC_DOC_files/figure-gfm/unnamed-chunk-15-1.png)<!-- --> It appears
+that ash leachate and GNP treatments had the highest bioavailable DOC
+fraction. This is in line with the increased growth rates and large
+decrease in TOC over the course of the experiment. Interestingly, mud
+leachate treatments had a lower bioavailable doc fraction when compared
+to the control. This seems to indicate that there is not much
+bioavailable carbon in mud leachate.
+
+**Average Change in DOC**
+
+``` r
+delta_doc_graph <- bar_data %>% 
+  ggplot(aes(x=Treatment, y=avg_delta_doc))+
+  geom_col(aes(fill=Treatment))+
+  geom_errorbar(aes(ymin = avg_delta_doc - sd_delta_doc, ymax = avg_delta_doc + sd_delta_doc), width=0.3)+
+  labs(y=expression("Change in DOC (to stationary phase), µmol C L"^-1))+
+  theme_bw()
+
+
+delta_doc_graph
+```
+
+![](TOC_DOC_files/figure-gfm/unnamed-chunk-16-1.png)<!-- --> Ash
+leachate and GNP treatments have the highest change in DOC, seeming to
+indicate that they made the greatest use of the available carbon to
+increase their biomass.
+
+**Average Change in DOC (total)**
+
+``` r
+tdelta_doc_graph <- bar_data %>% 
+  ggplot(aes(x=Treatment, y=avg_tdelta_doc))+
+  geom_col(aes(fill=Treatment))+
+  geom_errorbar(aes(ymin = avg_tdelta_doc - sd_tdelta_doc, ymax = avg_tdelta_doc + sd_tdelta_doc), width=0.3)+
+  labs(y=expression("Change in DOC (total), µmol C L"^-1))+
+  theme_bw()
+
+
+tdelta_doc_graph
+```
+
+![](TOC_DOC_files/figure-gfm/unnamed-chunk-17-1.png)<!-- --> \*\*See
+above explanation, results are similar.
+
+**Average BGE (total)**
+
+``` r
+bge_graph <- bar_data %>% 
+  ggplot(aes(x=Treatment, y=avg_bge))+
+  geom_col(aes(fill=Treatment))+
+  geom_errorbar(aes(ymin = avg_bge - sd_bge, ymax = avg_bge + sd_bge), width=0.3)+
+  labs(y=expression("Bacterial Growth Efficiency"))+
+  theme_bw()
+
+
+bge_graph
+```
+
+    ## Warning: Removed 2 rows containing missing values (position_stack).
+
+    ## Warning: Removed 2 rows containing missing values (geom_errorbar).
+
+![](TOC_DOC_files/figure-gfm/unnamed-chunk-18-1.png)<!-- --> It seems
+odd that there is no BGE for control or mud leachate treatments.
+However, this has to do with the way we calcualted BGE. Since the
+detection limit is \> 1.5, we assigned NA values if the change in DOC
+concentrations was less than that. Control and mud leachate treatments
+did not exceed this detection limit, thus no BGE values are available.
+With that out of the way, ash leachate has a slightly higher BGE,
+indicating that a greater percentage of nutrients were used to increase
+biomass in this treatment though a more robust statistical test is
+needed to say whether this is a significant increase over the GNP
+treatment.
+
+Now, we can display all the graphs at once with pathwork()
+
+``` r
+library(patchwork)
+```
+
+    ## Warning: package 'patchwork' was built under R version 3.6.3
+
+``` r
+bioav_doc_graph / delta_doc_graph / tdelta_doc_graph / bge_graph + plot_annotation(title="Averaged Plots for Ash,Mud,GNP Additions", tag_levels="a")
+```
+
+    ## Warning: Removed 2 rows containing missing values (position_stack).
+
+    ## Warning: Removed 2 rows containing missing values (geom_errorbar).
+
+![](TOC_DOC_files/figure-gfm/unnamed-chunk-19-1.png)<!-- -->
+
+``` r
+saveRDS(averages, "averaged_DOC_dataset.RDS")
+```
