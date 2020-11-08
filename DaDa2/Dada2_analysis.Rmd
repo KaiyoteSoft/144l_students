@@ -1,0 +1,196 @@
+---
+title: "DaDa2 Data Analysis"
+author: "Kai Oda"
+date: "11/8/2020"
+output: github_document
+---
+
+## Install the Dada2 Pipline 
+
+```{r}
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("dada2", version = "3.11")
+# BiocManager::install("ShortRead")
+# BiocManager::install(version = '3.11')
+
+```
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(dada2)
+library(ShortRead)
+```
+
+## Import the data!
+```{r}
+path <- ("../Input_Data/week5/EEMB144L_2018_fastq/")
+
+#store the names of the forward and rev files as lists
+fnFs <- list.files(path, pattern = "_R1_001.fastq", full.names = TRUE)
+fnRs <- list.files(path, pattern = "_R2_001.fastq", full.names = TRUE)
+
+fnFs
+fnRs
+```
+
+## Detect and remove primers (if necessary)
+
+Forward primer = **514F-Y**
+Reverse primer = **806RB**
+
+```{r}
+FWD = "GTGYCAGCMGCCGCGGTAA"
+REV = "GGACTACNVGGGTWTCTAAT"
+
+#Now, create a function that generates all possible orientations of the forward and reverse primers 
+allOrients <- function(primer) {
+  require(Biostrings)
+  dna <- DNAString(primer)
+  orients <- c(Forward = dna, Complement = complement(dna), Reverse = reverse(dna), 
+               RevComp = reverseComplement(dna))
+  return(sapply(orients, toString))
+}
+
+#Apply the function to the forward adn reverse primers to get the possible orientations
+FWD.orients <- allOrients(FWD)
+REV.orients <- allOrients(REV)
+
+
+FWD.orients
+REV.orients
+```
+
+Now that we have the possible orientations of the primer we want to search for their occurence in the sequence files and remove the data if necessary. 
+
+```{r}
+primerHits <- function(primer, fn) {
+  # Counts number of reads in which the primer is found
+  nhits <- vcountPattern(primer, sread(readFastq(fn)), fixed = FALSE)
+  return(sum(nhits > 0))
+}
+
+rbind(FWD.ForwardReads = sapply(FWD.orients, primerHits, fn = fnFs[[1]]), 
+      FWD.ReverseReads = sapply(FWD.orients, primerHits, fn = fnRs[[1]]), 
+      REV.ForwardReads = sapply(REV.orients, primerHits, fn = fnFs[[1]]), 
+      REV.ReverseReads = sapply(REV.orients, primerHits, fn = fnRs[[1]]))
+
+```
+
+There are a ton of occurences of the reverse complement in the forward reverse reads and the reverse forward read, but we're just gonna keep on forging forward? The video tutorials also had some occurences of the reverse complement. 
+
+## Create quality profiles 
+
+Quality profiles allow the user to assess the quality of the reads and determine if the sequence needs to be run again. 
+
+- Gray scale = Frequency of each quality score @ each base position 
+- Green = mean quality score 
+- Orange = quartiles for quality score at each base position 
+
+```{r}
+# Generate quality profile for the forward read 
+plotQualityProfile(fnFs[1:12])
+```
+
+Like the video tutorials, the quality score seems to be fairly high for the forward direction. We will follow the tutorial and trim off the last 10 cycles for the forward direction. 
+
+```{r}
+# Generate quality profile for the reverse read 
+plotQualityProfile(fnRs[1:12])
+```
+
+The reverse reads are much lower quality when compared to the forward reads. However, like the tutorial the quality seems to be OK until ~150 cycle. We will trim the data there. 
+
+## Filtering and Trimming the Data 
+
+Based on our visual inspection of the quality profiles we want to filter and trim the data. However, first we want to create a separate folder that contains the trimmed data so that we can leave the original sequences alone/unaltered. 
+
+```{r}
+# This line gives the names of all the samples of the forward direction (same names as the reverse direction)
+sample.names <- sapply(strsplit(basename(fnFs),"_L"), `[`,1)
+sample.names
+```
+
+```{r}
+## Creates a new folder to put the filtered sequences
+filt_path <- file.path(path,"filtered")
+
+#add the appropriate designation string to any new files made that will be put into the "filtered" folder
+filtFs <- file.path(filt_path, paste0(sample.names, "_F_filt.fastq"))
+filtRs <- file.path(filt_path, paste0(sample.names, "_R_filt.fastq"))
+```
+
+```{r}
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen = c(240,150),  maxN = 0, maxEE = c(2,2), truncQ = 2, rm.phix = TRUE, compress = TRUE)
+out
+```
+
+## Generating the error model and plotting the results 
+
+```{r}
+errF <- learnErrors(filtFs, multithread = TRUE)
+errR <- learnErrors(filtRs, multithread = TRUE)
+```
+
+The error plot elements are as follows: 
+
+- X axis = quality score (Based on quality profiles)
+- Y axis = error frequency 
+- Error rates between each possible transition 
+- Points = observed error rates
+- Black line = Estimated error rates 
+- Red line = Error rates expected via quality score 
+
+TLDR: Error rates drop with increasing quality score 
+
+
+```{r}
+plotErrors(errF, nominalQ = TRUE)
+plotErrors(errR, nominalQ = TRUE)
+
+```
+
+## Removing replication in filtered sequence data 
+
+```{r}
+# Making use of Dada2s derepFastq() function 
+derepFs <- derepFastq(filtFs, verbose = TRUE)
+derepRs <- derepFastq(filtRs, verbose = TRUE)
+
+## Assign sample names to the filtered list of sequences 
+names(derepFs) <- sample.names
+names(derepRs) <- sample.names
+```
+
+## Infer sequence variants 
+
+We're bringing it all together now. Essentially, we want to create a merged dataset of the forward and reverse reads that minimizes error and overlap. This dataset will have the number of unique sequences as well as information on average sequence lengths. 
+
+```{r}
+## Applies error model to the entire dataset to remove sequences that are likely not real
+dadaFs <- dada(derepFs, err = errF, multithread = TRUE)
+dadaRs <- dada(derepRs, err = errR, multithread = TRUE)
+
+```
+
+Next, we want to merge the forward and reverse datasets. This supposedly reduces error by reducing the amount of overlap between the datasets. We can also remove issues that we noticed with the reverse complement primer earlier in this tutorial with the *trimOverhang = T* argument. Supposedly, the reverse read often extends past the forward read, resulting in issues when we look at the reverse complement primer. This command trims that extension. 
+
+```{r}
+mergers <- mergePairs(dadaFs, derepFs, dadaRs, derepRs, verbose = TRUE, trimOverhang = T)
+```
+
+Let's look at the first six rows of the first element in the merged datset. 
+
+*Note: Columns = # of unique occurrences*
+
+```{r}
+
+```
+
+Then, we save the merged dataset for use in future assignments. 
+
+```{r}
+
+```
+
+Construct a sequence table: 
