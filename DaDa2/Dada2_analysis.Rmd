@@ -36,8 +36,8 @@ fnRs
 
 ## Detect and remove primers (if necessary)
 
-Forward primer = **514F-Y**
-Reverse primer = **806RB**
+- Forward primer = **514F-Y**
+- Reverse primer = **806RB**
 
 ```{r}
 FWD = "GTGYCAGCMGCCGCGGTAA"
@@ -124,6 +124,9 @@ filtRs <- file.path(filt_path, paste0(sample.names, "_R_filt.fastq"))
 out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen = c(240,150),  maxN = 0, maxEE = c(2,2), truncQ = 2, rm.phix = TRUE, compress = TRUE)
 out
 ```
+
+We now have a filtered dataset!
+
 
 ## Generating the error model and plotting the results 
 
