@@ -181,16 +181,82 @@ mergers <- mergePairs(dadaFs, derepFs, dadaRs, derepRs, verbose = TRUE, trimOver
 
 Let's look at the first six rows of the first element in the merged datset. 
 
-*Note: Columns = # of unique occurrences*
+- forward /reverse index = Location 
+- nMatch = # of overlaps for forward and reverse direction
 
 ```{r}
-
+head(mergers[[1]])
 ```
 
 Then, we save the merged dataset for use in future assignments. 
 
 ```{r}
-
+saveRDS(mergers, 'dada_merged.RDS')
 ```
 
 Construct a sequence table: 
+
+```{r}
+seqtab <- makeSequenceTable(mergers)
+
+# Look at the dimensions of the table
+dim(seqtab)
+```
+
+*Note: The columns represent unique sequences.*
+There are 815 unique sequences in the amplicon library 
+
+
+Checking the distribution of sequence lengths 
+
+```{r}
+table(nchar(getSequences(seqtab))) 
+```
+
+The first row is the sequence lengths. The second row is the number of occureneces of the lengths. We can see that most sequences are around 253 base pairs long with some distribution on either side. 
+
+## Removing chimeras 
+
+It is helpful to start off with a definition of what chimeras actually are: 
+
+Chimeras = Biological sequences that attach to each other. Results in amplification of non-biological sequence. 
+
+TLDR: We want to remove chimeras from the dataset. 
+
+```{r}
+seqtab.nochim <- removeBimeraDenovo(seqtab, verbose = TRUE)
+
+dim(seqtab.nochim)
+
+## Check to see what proportion of the dataset was comprised of chimeras 
+sum(seqtab.nochim)/sum(seqtab)
+
+```
+
+So ~ 0.5% of the dataset was comprised of chimeric sequences. 
+
+## Assigning taxonomy based on a reference database 
+
+Almost done... We now want to assign the unique sequences in our database to taxonomic groupings in a reference database. 
+
+```{r}
+taxa <- assignTaxonomy(seqtab.nochim, "../Input_Data/week5/Reference_Database/silva_nr_v138_train_set.fa", multithread = TRUE)
+
+```
+
+And... we want to save our datasets for future use!
+
+*Note: Took ~5 minutes to assign taxonomy on my computer*
+
+```{r}
+saveRDS(t(seqtab.nochim), "seqtab-nochimtaxa.rds")
+saveRDS(taxa,"taxa.rds")
+
+```
+
+And somehow my computer managed to not explode while attempting to run through these giant dataframes. 
+
+*End*
+
+
+
