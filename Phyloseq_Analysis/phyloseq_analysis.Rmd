@@ -1,0 +1,145 @@
+---
+title: "Phyloseq Analysis"
+author: "Kai Oda"
+date: "11/12/2020"
+output: github_document
+---
+
+```{r}
+# BiocManager::install("phyloseq")
+```
+
+## Load in the necessary libraries 
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(phyloseq)
+library(RColorBrewer)
+```
+
+## Import Data from weeks 4 and 5
+
+```{r}
+count.tab <- read_rds("../DaDa2/seqtab-nochimtaxa.rds") 
+tax.tab <- read_rds("../DaDa2/taxa.rds") 
+sample.tab <- read_rds("../Bacterial_Abundance/bacterialCarbon.RDS") %>% 
+  drop_na(DNA_SampleID) %>% 
+  column_to_rownames(var = "DNA_SampleID") 
+```
+
+## Create a phyloseq object 
+
+Essentially, all we are doing is combining the three datasets together 
+
+```{r}
+OTU = otu_table(count.tab, taxa_are_rows = TRUE) 
+TAX = tax_table(tax.tab)
+SAM = sample_data(sample.tab)
+ps = phyloseq(OTU,TAX,SAM) 
+```
+
+## Filtering out chloroplasts and mitochondria 
+
+We only want bacteria in our phyloseq object, so let's remove chloroplast and mitochondria taxa with the subset_taxa() command 
+
+```{r}
+sub_ps <- ps %>%
+  subset_taxa(Family  != "mitochondria" & Order  != "Chloroplast")
+```
+
+## Plotting distribution of read lengths 
+
+```{r}
+sample_sum_df <- data.frame(sum = sample_sums(sub_ps))
+
+ggplot(sample_sum_df, aes(x=sum))+
+  geom_histogram(color="black", fill="white", binwidth = 5000)+
+  xlab("Read counts")+
+  ylab("Occurences")+
+  ggtitle("Distribution of sample sequencing depth")+
+  theme_bw()
+
+```
+
+```{r}
+## Outputs mean, min and max of the read counts from the dataframe
+summary(sample_sum_df)
+```
+
+One thing to note from this output: the mean read length is SIGNIFICANTLY larger than the minimum read length (different from the videos). 
+
+This means that when we rarefy the data there will be a massive effect due to subsampling. Essentially, we are taking a dataset that has an average of 28000+ in read length, and only randomly sampling 2064 sequences from it. This seems like a LOT of lost data but we push on. 
+
+## Rarefying the data 
+
+As I understand from the video series: 
+
+- In order to calculate beta diversity we need to calculate pairwise comparisons between the data 
+- Pairwise comparisons are influenced by read depth 
+- Therefore, it is best practice to normalize/standardize read depth across samples 
+- This standardization process is called "rarefying" data
+- Essentially, we scale to the smallest library size and sub sample all sequences until we have a library equal to the smallest size... 
+
+```{r}
+ps_min <-  rarefy_even_depth(sub_ps, sample.size = min(sample_sums(sub_ps)))
+
+mean(sample_sums(sub_ps))#28808.5
+mean(sample_sums(ps_min)) #2064 
+```
+
+## Ordinating and visualizing beta diversity 
+
+```{r}
+## Calculating the stress level for the non-subsampled datset 
+set.seed(1)
+nmds <- ordinate(sub_ps, method = "NMDS",  distance = "bray") 
+```
+
+Stress level for the **nonsubsampled dataset is 0.076.** This is lower than the cutoff (0.2). Therefore, this is a reasonably good translation of multi-dimensional data to a 2D space. 
+
+```{r}
+set.seed(1)
+nmds_min <- ordinate(ps_min, method = "NMDS",  distance = "bray") 
+```
+
+Stress level for the subsampled dataset is **0.08**. This means that the subsampled datset is also a good translation from multi-dimensional data to 2D space. 
+
+## Plotting beta diversity 
+
+```{r fig.width=12}
+levels <- c("Control", "Ash Leachate", "Mud Leachate", "Glucose_Nitrate_Phosphate")
+
+nmds.plot <- plot_ordination(sub_ps, nmds, title="NMDS Nonsubsampled")+
+  geom_point(aes(fill=days, shape = factor(Treatment, levels = levels)), alpha = 0.6, stroke = 2, size = 4)+
+  scale_shape_manual(values = c(21, 22, 23, 24))+
+  scale_fill_gradient(low = "blue", high = "#d31f2a")+
+  theme_bw()
+
+#remove the point layer (removes the point within the point)
+nmds.plot$layers <- nmds.plot$layers[-1]
+
+nmds.plot + 
+  facet_grid(~Treatment)+
+  guides(fill = guide_colorbar(title="Days"), shape= guide_legend(title="Treatment"))
+
+```
+
+```{r fig.width=12}
+nmds_min.plot <- plot_ordination(ps_min, nmds_min, title="NMDS Subsampled")+
+  geom_point(aes(fill=days, shape = factor(Treatment, levels = levels)), alpha = 0.6, stroke = 2, size = 4)+
+  scale_shape_manual(values = c(21, 22, 23, 24))+
+  scale_fill_gradient(low = "blue", high = "#d31f2a")+
+  theme_bw()
+
+#remove the point layer (removes the point within the point)
+nmds_min.plot$layers <- nmds_min.plot$layers[-1]
+
+nmds_min.plot + 
+  facet_grid(~Treatment)+
+  guides(fill = guide_colorbar(title="Days"), shape= guide_legend(title="Treatment"))
+```
+
+
+
+
+
+
