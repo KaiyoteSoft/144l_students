@@ -60,6 +60,8 @@ ggplot(sample_sum_df, aes(x=sum))+
 
 ```
 
+From the histogram we can see that read counts are more or less normally distributed with a mean ~28000. However, there are some outliers on either side. The disparity between the smallest read count and the median may pose some issues when calculating beta diversity. 
+
 ```{r}
 ## Outputs mean, min and max of the read counts from the dataframe
 summary(sample_sum_df)
@@ -118,10 +120,13 @@ nmds.plot <- plot_ordination(sub_ps, nmds, title="NMDS Nonsubsampled")+
 nmds.plot$layers <- nmds.plot$layers[-1]
 
 nmds.plot + 
-  facet_grid(~Treatment)+
+  facet_grid(~Location)+
   guides(fill = guide_colorbar(title="Days"), shape= guide_legend(title="Treatment"))
 
 ```
+
+Clustered points indicate similar diversity while distance points indicate relative disimilarity. In early timepoints all treatments are relatively similar. However, in later treatments the diversity diverges, with GNP and ash leachate treatments having distinct diversity. Control and mud leachate treatments appear to have similar diversity. 
+
 
 ```{r fig.width=12}
 nmds_min.plot <- plot_ordination(ps_min, nmds_min, title="NMDS Subsampled")+
@@ -134,9 +139,11 @@ nmds_min.plot <- plot_ordination(ps_min, nmds_min, title="NMDS Subsampled")+
 nmds_min.plot$layers <- nmds_min.plot$layers[-1]
 
 nmds_min.plot + 
-  facet_grid(~Treatment)+
+  facet_grid(~Location)+
   guides(fill = guide_colorbar(title="Days"), shape= guide_legend(title="Treatment"))
 ```
+
+The subsampled beta diversity plot has similar trends to the nonsubsampled one. 
 
 ## Calculating and plotting alpha diversity 
 
@@ -176,7 +183,7 @@ pivot.data <- alphadiv %>%
 
 ## Plotting alpha diversity 
 
-```{r fig.width=12}
+```{r fig.height=8, fig.width=12, warning=FALSE}
 library(ggpubr)
 
 alpha.plot <- ggboxplot(pivot.data, x = "Timepoint", y = "est",
@@ -190,8 +197,9 @@ alpha.plot <- ggboxplot(pivot.data, x = "Timepoint", y = "est",
 
 alpha.plot
 ```
+There does not seem to be a significant difference in the alpha diversity within treatments cross the experiment. This is somewhat confusing, as some treatments appear to have drastically different diversity depending on the timepoint. However, the Kruskal-Wallis test (similar to a one way ANOVA), indicates that there is no significant difference in the mean alpha diversity across time within treatments... 
 
-```{r fig.width=15}
+```{r fig.height=8, fig.width=15}
 alpha.plot2 <-  ggboxplot(pivot.data, x = "Treatment", y = "est", 
             xlab = expression(italic(paste(""))), 
             ylab = expression(italic(paste("Alpha Diversity Measure"))),
@@ -204,6 +212,8 @@ alpha.plot2 <-  ggboxplot(pivot.data, x = "Treatment", y = "est",
 alpha.plot2
 
 ```
+
+Once again, no significant difference in the mean alpha diversity across treatments. Generally, as time increases the p value decreases, but at no time point are the means significantly different from one another across treatments. 
 
 ## Creating a heat map 
 
@@ -306,7 +316,7 @@ relaheat.data <- relabund %>%
 
 ## Plotting the heat map 
 
-```{r fig.height=14}
+```{r fig.height=12, fig.width=12}
 ## Import the color library we will be using 
 library(viridis)
 
@@ -323,6 +333,9 @@ facet_grid(~factor(Treatment, levels = levels)) +
 
 relaheat
 ```
+
+General trends can be observed by simply looking at the heat plot. Oceanospirillales seemed to be much more prevalent in GNP treatments while Campylobacterales saw a surge in ash leachate treatments. 
+
 
 ## Saving our data
 
